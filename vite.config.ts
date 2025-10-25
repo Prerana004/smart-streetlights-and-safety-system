@@ -16,4 +16,14 @@ export default defineConfig(({ mode }) => ({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        assetFileNames: (assetInfo) => {
+          if (assetInfo.name === 'favicon.ico') return '';
+          return 'assets/[name]-[hash][extname]';
+        }
+      }
+    }
+  }
 }));
