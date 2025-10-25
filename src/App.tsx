@@ -7,6 +7,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { SmartCitySidebar } from "@/components/SmartCity/SmartCitySidebar";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
+import Simulation from "./pages/Simulation";
 
 const queryClient = new QueryClient();
 
@@ -40,6 +41,7 @@ const App = () => (
               <main className="flex-1 p-6">
                 <Routes>
                   <Route path="/" element={<Index />} />
+                  <Route path="/simulation" element={<Simulation />} />
                   {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                   <Route path="*" element={<NotFound />} />
                 </Routes>

@@ -4,10 +4,12 @@ import { Video } from "lucide-react";
 const CCTVStreams = () => {
   // Replace these YouTube URLs with your actual CCTV stream links
   const streams = [
-    { id: 1, title: "Main Street - North", url: "https://www.youtube.com/embed/dQw4w9WgXcQ" },
-    { id: 2, title: "Central Plaza", url: "https://www.youtube.com/embed/dQw4w9WgXcQ" },
-    { id: 3, title: "Park Avenue", url: "https://www.youtube.com/embed/dQw4w9WgXcQ" },
-    { id: 4, title: "Highway Junction", url: "https://www.youtube.com/embed/dQw4w9WgXcQ" },
+    { id: 1, title: "Main Street - North", url: "https://www.youtube.com/embed/H0Z6faxNLCI?autoplay=1&mute=0" },
+    { id: 2, title: "Central Plaza", url: "https://www.youtube.com/embed/57w2gYXjRic?autoplay=1&mute=0" },
+    { id: 3, title: "Park Avenue", url: "https://www.youtube.com/embed/9SLt3AT0rXk?autoplay=1&mute=0" },
+    { id: 4, title: "Highway Junction", url: "https://www.youtube.com/embed/WPMgP2C3_co?autoplay=1&mute=0" },
+    { id: 5, title: "City Center", url: "https://www.youtube.com/embed/1EiC9bvVGnk?autoplay=1&mute=0" },
+    { id: 6, title: "Shopping Mall", url: "https://www.youtube.com/embed/CF1vS8DdBIk?autoplay=1&mute=0" },
   ];
 
   return (
