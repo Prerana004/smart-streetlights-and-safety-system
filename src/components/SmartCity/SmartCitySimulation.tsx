@@ -26,9 +26,16 @@ const SmartCitySimulation = () => {
             </Button>
           </div>
         </div>
-        <div className="mt-4 p-3 bg-muted rounded-lg">
-          <div className="text-sm font-medium mb-2">Notes</div>
-          <div className="text-xs text-muted-foreground">Click "View Simulation" to open the full AI Predictive Streetlight demo in a dedicated page.</div>
+        <div className="mt-4 p-3 bg-muted rounded-lg flex items-start justify-between gap-4">
+          <div className="flex-1">
+            <div className="text-sm font-medium mb-2">Notes</div>
+            <div className="text-xs text-muted-foreground">Click "View Simulation" to open the full AI Predictive Streetlight demo in a dedicated page.</div>
+          </div>
+          <div className="flex-shrink-0">
+            <Button asChild variant="secondary" className="!px-4 !py-2">
+              <a href="/demo-fixed-brightness.html" target="_blank" rel="noreferrer">Demo</a>
+            </Button>
+          </div>
         </div>
 
         {/* Streetlight Health Monitor */}

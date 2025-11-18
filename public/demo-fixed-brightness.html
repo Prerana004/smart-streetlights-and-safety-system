@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Streetlight Simulation (Fixed Brightness)</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <style>
+    body { margin:0; background:#000; color:#fff; font-family:monospace; }
+    #hud {
+      position:absolute; top:10px; left:10px;
+      background:rgba(0,0,0,0.6);
+      padding:10px 14px;
+      border-radius:8px;
+      font-size:14px;
+    }
+  </style>
+</head>
+<body>
+  <div id="hud">
+    <div>SSE: <span id="sse">connecting...</span></div>
+    <div>Frame: <span id="ts">—</span></div>
+    <div>Last: <span id="last-msg">—</span></div>
+    <div style="margin-top:6px;"><button id="btn-toggle-sse" style="padding:6px; background:#222; color:#ffd27a; border:1px solid #444; cursor:pointer;">Stop SSE</button></div>
+  </div>
+  
+  <!-- JSON test panel -->
+  <div id="json-panel" style="position:absolute; right:10px; top:10px; z-index:20; background:rgba(0,0,0,0.6); padding:8px; border-radius:6px; width:300px;">
+    <div style="color:#ffd27a; font-family:monospace; margin-bottom:6px;">JSON Input (paste payload)</div>
+    <textarea id="json-input" style="width:100%; height:90px; background:#111; color:#eee; border:1px solid #333; font-family:monospace; font-size:12px; padding:6px;"></textarea>
+    <div style="display:flex; gap:6px; margin-top:6px;">
+      <button id="btn-apply-json" style="flex:1; padding:6px; background:#222; color:#ffd27a; border:1px solid #444; cursor:pointer;">Apply JSON</button>
+      <button id="btn-fill-example" style="padding:6px; background:#222; color:#fff; border:1px solid #444; cursor:pointer;">Example</button>
+    </div>
+  </div>
+
+  <script>
+  const scene = new THREE.Scene();
+  // subtle bluish night fog (very low) so distant lights still read
+  scene.fog = new THREE.FogExp2(0x050613, 0.0009);
+
+  const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 4000);
+  camera.position.set(0, 20, 200);
+  camera.lookAt(0, 0, 0);
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.2;
+  renderer.outputEncoding = THREE.sRGBEncoding;
+  document.body.appendChild(renderer.domElement);
+
+  const controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.target.set(0, 0, 0);
+  controls.maxPolarAngle = Math.PI / 2 - 0.05;
+  controls.screenSpacePanning = false;
+  controls.enablePan = true;
+  controls.update();
+
+  scene.add(new THREE.AmbientLight(0x111111, 0.12));
+
+  function createRoadTexture(width = 1024, height = 2048) {
+    const c = document.createElement('canvas');
+    c.width = width; c.height = height;
+    const ctx = c.getContext('2d');
+
+    ctx.fillStyle = '#2e2e2e';
+    ctx.fillRect(0, 0, width, height);
+
+    for (let i = 0; i < 8000; i++) {
+      const x = Math.random() * width;
+      const y = Math.random() * height;
+      const a = Math.random() * 30 + 20;
+      ctx.fillStyle = `rgba(${a},${a},${a},${(Math.random()*0.06)})`;
+      ctx.fillRect(x, y, 1, 1);
+    }
+
+    ctx.strokeStyle = '#f2f2c9';
+    ctx.lineWidth = 8;
+    ctx.setLineDash([60, 40]);
+    ctx.beginPath();
+    ctx.moveTo(width/2, 0);
+    ctx.lineTo(width/2, height);
+    ctx.stroke();
+
+    ctx.setLineDash([]);
+    ctx.lineWidth = 6;
+    ctx.strokeStyle = '#dddddd';
+    ctx.beginPath();
+    ctx.moveTo(width*0.18, 0);
+    ctx.lineTo(width*0.18, height);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(width*0.82, 0);
+    ctx.lineTo(width*0.82, height);
+    ctx.stroke();
+
+    return new THREE.CanvasTexture(c);
+  }
+
+  const roadTex = createRoadTexture();
+  roadTex.wrapS = roadTex.wrapT = THREE.RepeatWrapping;
+  roadTex.repeat.set(1, 30);
+
+  const roadWidth = 120;
+  const roadGeom = new THREE.PlaneGeometry(roadWidth, 3000);
+  const roadMat = new THREE.MeshStandardMaterial({ map: roadTex, roughness: 0.45, metalness: 0.15 });
+  const road = new THREE.Mesh(roadGeom, roadMat);
+  road.rotation.x = -Math.PI/2;
+  road.receiveShadow = true;
+  scene.add(road);
+
+  const sidewalkMat = new THREE.MeshStandardMaterial({ color: 0x555556, roughness: 0.9, metalness: 0.02 });
+  const sidewalkL = new THREE.Mesh(new THREE.BoxGeometry(12, 0.2, 3000), sidewalkMat);
+  sidewalkL.position.set(-roadWidth/2 + 4, 0.1, 0);
+  sidewalkL.receiveShadow = true;
+  scene.add(sidewalkL);
+  const sidewalkR = sidewalkL.clone();
+  sidewalkR.position.set(roadWidth/2 - 4, 0.1, 0);
+  scene.add(sidewalkR);
+
+  const curbMat = new THREE.MeshStandardMaterial({ color: 0x2b2b2b, roughness: 0.8 });
+  const curbL = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.4, 3000), curbMat);
+  curbL.position.set(-roadWidth/2 + 9.5, 0.2, 0);
+  scene.add(curbL);
+  const curbR = curbL.clone(); curbR.position.set(roadWidth/2 - 9.5, 0.2, 0); scene.add(curbR);
+
+  const lights = [];
+  const lampById = new Map();
+  const maxInt = 80.0, baseInt = 4.0;
+
+  const labelContainer = document.createElement('div');
+  labelContainer.style.position = 'absolute';
+  labelContainer.style.left = '0';
+  labelContainer.style.top = '0';
+  labelContainer.style.pointerEvents = 'none';
+  document.body.appendChild(labelContainer);
+
+  function makeLamp(id, x, z) {
+    const g = new THREE.Group();
+    g.position.set(x, 0, z);
+
+    const poleMat = new THREE.MeshStandardMaterial({ color: 0x222226, metalness: 0.6, roughness: 0.5 });
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 15, 10), poleMat);
+    pole.position.y = 7.5;
+    pole.castShadow = true;
+    g.add(pole);
+
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.15, 2.6), poleMat);
+    arm.position.set(0, 14.7, 1.2);
+    arm.rotation.x = Math.PI * 0.05;
+    g.add(arm);
+
+  const headMat = new THREE.MeshStandardMaterial({ color: 0x111111, metalness: 0.7, roughness: 0.25 });
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.25, 0.9), headMat);
+  head.position.set(0, 14.7, 2.6);
+  head.rotation.x = -0.15;
+  g.add(head);
+
+  const glassMat = new THREE.MeshPhysicalMaterial({ color: 0xffffff, metalness: 0, roughness: 0.1, transparent: true, opacity: 0.12, transmission: 0.9, reflectivity: 0.2 });
+  const glass = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.18, 0.6), glassMat);
+  glass.position.set(0, 14.7, 2.35);
+  g.add(glass);
+
+  const bulbMat = new THREE.MeshStandardMaterial({ color: 0xffe6b3, emissive: 0x000000, emissiveIntensity: 1, metalness: 0.1, roughness: 0.3 });
+  const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.24, 16, 12), bulbMat);
+  bulb.position.set(0, 14.7, 2.35);
+  g.add(bulb);
+
+  const spot = new THREE.SpotLight(0xffd27a, baseInt, 300, 0.5, 0.4, 2);
+  spot.position.set(x, 14.7, z + 2.35);
+  const tgt = new THREE.Object3D(); tgt.position.set(x, 0, z + 14);
+  scene.add(tgt);
+  spot.target = tgt;
+  spot.castShadow = true;
+  spot.shadow.mapSize.width = spot.shadow.mapSize.height = 1024;
+  g.add(spot);
+
+  const diskSize = 3.5;
+  const diskCanvas = document.createElement('canvas');
+  diskCanvas.width = diskCanvas.height = 256;
+  const dctx = diskCanvas.getContext('2d');
+  const dgr = dctx.createRadialGradient(128,128,8,128,128,128);
+  dgr.addColorStop(0, 'rgba(255,240,190,1)');
+  dgr.addColorStop(0.25, 'rgba(255,220,140,0.7)');
+  dgr.addColorStop(0.6, 'rgba(255,200,120,0.18)');
+  dgr.addColorStop(1, 'rgba(255,200,120,0)');
+  dctx.fillStyle = dgr; dctx.fillRect(0,0,256,256);
+  const diskTex = new THREE.CanvasTexture(diskCanvas);
+  diskTex.encoding = THREE.sRGBEncoding;
+  const diskGeom = new THREE.CircleGeometry(diskSize, 32);
+  const diskMat = new THREE.MeshBasicMaterial({ map: diskTex, transparent: true, opacity: 0.02, blending: THREE.AdditiveBlending, depthWrite: false });
+  const groundLight = new THREE.Mesh(diskGeom, diskMat);
+  groundLight.rotation.x = -Math.PI/2;
+  groundLight.position.set(0, 0.02, 3.5);
+  groundLight.renderOrder = 1;
+  g.add(groundLight);
+
+    const glowCanvas = document.createElement('canvas'); glowCanvas.width = glowCanvas.height = 128;
+    const gctx = glowCanvas.getContext('2d');
+    const grd = gctx.createRadialGradient(64,64,8,64,64,64);
+    grd.addColorStop(0, 'rgba(255,245,200,0.95)');
+    grd.addColorStop(0.25, 'rgba(255,200,100,0.6)');
+    grd.addColorStop(1, 'rgba(255,200,100,0)');
+    gctx.fillStyle = grd; gctx.fillRect(0,0,128,128);
+    const spriteMap = new THREE.CanvasTexture(glowCanvas);
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: spriteMap, color: 0xffffff, transparent: true, blending: THREE.AdditiveBlending }));
+  sprite.position.set(0, 14.7, 2.35);
+  sprite.scale.set(1.6,1.6,1.6);
+    g.add(sprite);
+
+      const lensGeom = new THREE.SphereGeometry(0.32, 16, 12, 0, Math.PI * 2, 0, Math.PI/2);
+      const lensMat = new THREE.MeshPhysicalMaterial({ color: 0xfff0c8, metalness: 0, roughness: 0.1, transparent: true, opacity: 0.4, emissive: 0x000000, emissiveIntensity: 0 });
+      const lens = new THREE.Mesh(lensGeom, lensMat);
+      lens.position.set(0, 14.7, 2.45);
+      g.add(lens);
+
+      const lensCanvas = document.createElement('canvas'); lensCanvas.width = lensCanvas.height = 64;
+      const lctx = lensCanvas.getContext('2d');
+      const lgr = lctx.createRadialGradient(32,32,2,32,32,32);
+      lgr.addColorStop(0, 'rgba(255,235,160,1)');
+      lgr.addColorStop(0.3, 'rgba(255,200,100,0.8)');
+      lgr.addColorStop(1, 'rgba(255,200,100,0)');
+      lctx.fillStyle = lgr; lctx.fillRect(0,0,64,64);
+      const lensMap = new THREE.CanvasTexture(lensCanvas);
+      const lensSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: lensMap, color: 0xffffff, transparent: true, blending: THREE.AdditiveBlending }));
+      lensSprite.position.set(0, 14.7, 2.45);
+      lensSprite.scale.set(0.9, 0.9, 0.9);
+      g.add(lensSprite);
+
+  const label = document.createElement('div');
+  label.className = 'lamp-label';
+  label.style.position = 'absolute';
+  label.style.padding = '4px 6px';
+  label.style.background = 'rgba(0,0,0,0.6)';
+  label.style.color = '#ffd27a';
+  label.style.fontSize = '12px';
+  label.style.fontFamily = 'monospace';
+  label.style.borderRadius = '4px';
+  label.style.transform = 'translate(-50%, -150%)';
+  label.textContent = '0%';
+  labelContainer.appendChild(label);
+
+    g.position.set(x, 0, z);
+    scene.add(g);
+
+  const rec = { id, group: g, spot, bulb, sprite, lens, lensSprite, groundLight, label, targetIntensity: baseInt };
+    lights.push(rec);
+    lampById.set(id, rec);
+  }
+
+  (function placeLampsEvenly(x, zStart, zEnd, count){
+    if (count <= 0) return;
+    for (let i = 0; i < count; i++) {
+      const t = (count === 1) ? 0.5 : i / (count - 1);
+      const z = zStart + (zEnd - zStart) * t;
+      makeLamp('L' + (i + 1), x, Math.round(z));
+    }
+  })(roadWidth/2 - 4, -120, 120, 4);
+
+  camera.position.set(0, 28, 200);
+  camera.lookAt(0, 0, 0);
+  controls.target.set(0, 0, 0);
+  controls.update();
+
+  function setFromBrightness(id, b) {
+    const rec = lampById.get(id);
+    if (!rec) return;
+    const t = Math.max(0, Math.min(1, b / 100));
+    rec.targetIntensity = baseInt + (maxInt - baseInt) * t;
+    if (rec && rec.label) {
+      rec.label.textContent = Math.round(t * 100) + '%';
+    }
+  }
+
+  function applyBrightnessCmds(cmds) {
+    if (cmds && typeof cmds === 'object') {
+      Object.entries(cmds).forEach(([id, b]) => {
+        setFromBrightness(id, b);
+        console.log(`[Brightness] ${id} → ${b}%`);
+      });
+    }
+  }
+
+  function applyJSON(payload) {
+    try {
+      let obj = payload;
+      if (typeof payload === 'string') obj = JSON.parse(payload);
+      if (obj == null) return;
+      if (obj.cmds && typeof obj.cmds === 'object') {
+        applyBrightnessCmds(obj.cmds);
+      } else {
+        const maybeCmds = {};
+        Object.entries(obj).forEach(([k,v]) => {
+          if (/^L\d+$/i.test(k) && (typeof v === 'number' || typeof v === 'string')) {
+            maybeCmds[k] = Number(v);
+          }
+        });
+        if (Object.keys(maybeCmds).length) applyBrightnessCmds(maybeCmds);
+      }
+      if (obj.ts) {
+        const val = typeof obj.ts === 'number' ? obj.ts : Date.now();
+        tsEl.textContent = (val/1000).toFixed(2);
+      }
+    } catch (e) {
+      console.warn('applyJSON parse failed', e);
+    }
+  }
+  window.applyJSON = applyJSON;
+  window.applyBrightnessCmds = applyBrightnessCmds;
+
+  const SSE_URL = "https://cesural-unsymphonious-mario.ngrok-free.dev/stream";
+  const sseEl = document.getElementById('sse'), tsEl = document.getElementById('ts');
+  const lastMsgEl = document.getElementById('last-msg');
+  const btnToggleSse = document.getElementById('btn-toggle-sse');
+
+  let sseController = null;
+  let sseRunning = false;
+
+  async function connectSSE() {
+    if (!sseController) sseController = new AbortController();
+    const signal = sseController.signal;
+    sseRunning = true;
+    console.log('[SSE] Connecting...');
+    try {
+      const response = await fetch(SSE_URL, {
+        headers: { 'ngrok-skip-browser-warning': 'true' },
+        signal
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      sseEl.textContent = 'connected';
+      sseEl.style.color = '#0f0';
+      console.log('[SSE] Connected!');
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop();
+
+        for (const line of lines) {
+          if (signal.aborted) throw new Error('SSE aborted');
+          if (line.startsWith('data: ')) {
+            try {
+              const payload = JSON.parse(line.slice(6));
+              applyJSON(payload);
+              try { lastMsgEl.textContent = JSON.stringify(payload).slice(0, 200); } catch(_) { lastMsgEl.textContent = 'received'; }
+            } catch (e) { console.warn('Parse error:', e); }
+          }
+        }
+      }
+    } catch (e) {
+      if (e.name === 'AbortError') {
+        console.log('[SSE] Aborted');
+      } else {
+        sseEl.textContent = 'error';
+        sseEl.style.color = '#f00';
+        console.error('[SSE] Failed:', e);
+      }
+      sseRunning = false;
+      sseController = null;
+      if (!signal || !signal.aborted) setTimeout(connectSSE, 3000);
+    }
+  }
+
+  function startSSE() {
+    if (sseRunning) return;
+    sseController = new AbortController();
+    connectSSE();
+    btnToggleSse.textContent = 'Stop SSE';
+  }
+
+  function stopSSE() {
+    if (sseController) {
+      try { sseController.abort(); } catch(_) {}
+      sseController = null;
+    }
+    sseRunning = false;
+    sseEl.textContent = 'stopped';
+    sseEl.style.color = '#ffa500';
+    btnToggleSse.textContent = 'Start SSE';
+    lastMsgEl.textContent = '—';
+  }
+
+  startSSE();
+
+  btnToggleSse.addEventListener('click', () => {
+    if (sseRunning) stopSSE(); else startSSE();
+  });
+
+  const clock = new THREE.Clock();
+  function animate() {
+    requestAnimationFrame(animate);
+    const dt = clock.getDelta();
+    controls.update();
+
+    lights.forEach(rec => {
+      const diff = Math.abs(rec.targetIntensity - rec.spot.intensity);
+      const speed = 4 + diff * 6;
+      rec.spot.intensity = THREE.MathUtils.lerp(rec.spot.intensity, rec.targetIntensity, Math.min(1, speed * dt));
+        const t = Math.max(0, Math.min(1, rec.spot.intensity / maxInt));
+        const visual = Math.pow(t, 1.5);
+
+        if (rec.bulb && rec.bulb.material) {
+          rec.bulb.material.emissive.setHex(0xffd27a);
+          rec.bulb.material.emissiveIntensity = 0.2 + 32.0 * visual;
+          rec.bulb.material.needsUpdate = true;
+        }
+
+        if (rec.sprite && rec.sprite.material) {
+          const scale = 1.0 + 3.2 * visual;
+          rec.sprite.scale.set(scale, scale, scale);
+          rec.sprite.material.opacity = 0.06 + 1.6 * visual;
+        }
+
+        if (rec.lens && rec.lens.material) {
+          rec.lens.material.emissive.setHex(0xffe6b0);
+          rec.lens.material.emissiveIntensity = 0.6 * visual;
+          rec.lens.material.opacity = 0.25 + 0.65 * visual;
+          rec.lens.material.needsUpdate = true;
+        }
+        if (rec.lensSprite && rec.lensSprite.material) {
+          const ls = 0.6 + 2.6 * visual;
+          rec.lensSprite.scale.set(ls, ls, ls);
+          rec.lensSprite.material.opacity = 0.08 + 1.6 * visual;
+        }
+
+        if (rec.groundLight && rec.groundLight.material) {
+          const gs = 1.0 + 4.0 * visual;
+          rec.groundLight.scale.set(gs, gs, 1);
+          rec.groundLight.material.opacity = 0.02 + 0.55 * visual;
+          rec.groundLight.material.needsUpdate = true;
+        }
+
+        if (rec.label) {
+          const pos = new THREE.Vector3();
+          rec.group.getWorldPosition(pos);
+          pos.y += 15;
+          pos.project(camera);
+          const x = (pos.x * 0.5 + 0.5) * window.innerWidth;
+          const y = ( - pos.y * 0.5 + 0.5) * window.innerHeight;
+          rec.label.style.left = x + 'px';
+          rec.label.style.top = y + 'px';
+          const pct = Math.round(((rec.targetIntensity - baseInt) / (maxInt - baseInt)) * 100);
+          rec.label.textContent = pct + '%';
+        }
+    });
+
+    renderer.render(scene, camera);
+  }
+  animate();
+
+  addEventListener('resize', () => {
+    camera.aspect = innerWidth / innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth, innerHeight);
+  });
+
+  document.getElementById('btn-apply-json').addEventListener('click', () => {
+    const txt = document.getElementById('json-input').value.trim();
+    if (!txt) return;
+    try { applyJSON(txt); } catch (e) { console.warn('applyJSON error', e); }
+  });
+  document.getElementById('btn-fill-example').addEventListener('click', () => {
+    document.getElementById('json-input').value = JSON.stringify({ cmds: { L1: 92, L2: 70, L3: 45, L4: 10 }, ts: Date.now() });
+  });
+
+  console.log('[Init] Scene fixed and visible ✅');
+  </script>
+</body>
+</html>
